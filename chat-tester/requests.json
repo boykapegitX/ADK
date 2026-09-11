@@ -1,0 +1,128 @@
+{
+  "_readme": "Reference requests for testing deployed services via the chat-tester Raw Request mode. Copy the method/url/body/headers into the tool's fields. Requests 1-3 target test_app (ADK, userId/sessionId must match between 'create_session' and 'send_message'). Requests 4-7 target mcp-currency-server (MCP JSON-RPC over a single /mcp endpoint) - see 'mcp_target' below for the session-id caveat.",
+
+  "target": {
+    "base_url": "https://test-app-962412240887.us-east1.run.app",
+    "app_name": "test_app",
+    "user_id": "bruno-user",
+    "session_id": "bruno-session-1"
+  },
+
+  "mcp_target": {
+    "base_url": "https://mcp-currency-server-962412240887.us-east1.run.app",
+    "endpoint": "/mcp",
+    "protocol": "MCP Streamable HTTP (JSON-RPC 2.0), built with fastmcp",
+    "note": "Requests 5-7 need an 'Mcp-Session-Id' header whose value comes from the 'mcp-session-id' response header of request 4 (initialize). Copy it manually into each subsequent request's Headers tab - the tool does not auto-carry it forward. Get a fresh session id by re-running request 4 if you start over. Responses come back as text/event-stream (SSE) - the tool will show the raw 'event: message\\ndata: {...}' text rather than pretty-printed JSON; that's expected."
+  },
+
+  "requests": [
+    {
+      "name": "1. list_apps",
+      "purpose": "Confirm the service is up and get the registered app name.",
+      "method": "GET",
+      "url": "https://test-app-962412240887.us-east1.run.app/list-apps",
+      "headers": {},
+      "body": null,
+      "expected": "200 OK -> [\"test_app\"]"
+    },
+    {
+      "name": "2. create_session",
+      "purpose": "Register a session before chatting. Re-run with a new session_id to start a fresh conversation.",
+      "method": "POST",
+      "url": "https://test-app-962412240887.us-east1.run.app/apps/test_app/users/bruno-user/sessions/bruno-session-1",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{}",
+      "expected": "200 OK -> echoes back the created session object"
+    },
+    {
+      "name": "3. send_message",
+      "purpose": "Send a chat message to the research_assistant agent. Edit the 'text' field for different questions; keep userId/sessionId matching request 2.",
+      "method": "POST",
+      "url": "https://test-app-962412240887.us-east1.run.app/run",
+      "headers": { "Content-Type": "application/json" },
+      "body": {
+        "appName": "test_app",
+        "userId": "bruno-user",
+        "sessionId": "bruno-session-1",
+        "newMessage": {
+          "role": "user",
+          "parts": [{ "text": "What is the capital of Japan?" }]
+        }
+      },
+      "expected": "200 OK -> JSON array of events; look for role=model content.parts[0].text, plus groundingMetadata if google_search was used"
+    },
+    {
+      "name": "4. mcp_initialize",
+      "purpose": "Start an MCP session with the currency server. Copy the 'mcp-session-id' response header value - you need it for requests 5-7.",
+      "method": "POST",
+      "url": "https://mcp-currency-server-962412240887.us-east1.run.app/mcp",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-06-18",
+          "capabilities": {},
+          "clientInfo": { "name": "chat-tester", "version": "1.0.0" }
+        }
+      },
+      "expected": "200 OK, content-type text/event-stream, response Headers tab shows 'mcp-session-id: <uuid>' - copy that value into requests 5-7's Mcp-Session-Id header"
+    },
+    {
+      "name": "5. mcp_initialized_notification",
+      "purpose": "Required handshake step before calling tools. Paste the session id from request 4 into the Mcp-Session-Id header value below (replace PASTE_SESSION_ID_HERE).",
+      "method": "POST",
+      "url": "https://mcp-currency-server-962412240887.us-east1.run.app/mcp",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "Mcp-Session-Id": "PASTE_SESSION_ID_HERE"
+      },
+      "body": { "jsonrpc": "2.0", "method": "notifications/initialized" },
+      "expected": "202 Accepted, empty body"
+    },
+    {
+      "name": "6. mcp_tools_list",
+      "purpose": "List tools the MCP server exposes. Same Mcp-Session-Id header requirement as request 5.",
+      "method": "POST",
+      "url": "https://mcp-currency-server-962412240887.us-east1.run.app/mcp",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "Mcp-Session-Id": "PASTE_SESSION_ID_HERE"
+      },
+      "body": { "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} },
+      "expected": "200 OK -> result.tools includes 'get_exchange_rate' with its inputSchema"
+    },
+    {
+      "name": "7. mcp_tools_call_get_exchange_rate",
+      "purpose": "Actually call the get_exchange_rate tool. Edit currency_from/currency_to/currency_date as needed. Same Mcp-Session-Id header requirement.",
+      "method": "POST",
+      "url": "https://mcp-currency-server-962412240887.us-east1.run.app/mcp",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "Mcp-Session-Id": "PASTE_SESSION_ID_HERE"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "get_exchange_rate",
+          "arguments": { "currency_from": "USD", "currency_to": "EUR", "currency_date": "latest" }
+        }
+      },
+      "expected": "200 OK -> result.content[0].text is a JSON string like {\"amount\":1.0,\"base\":\"USD\",\"date\":\"...\",\"rates\":{\"EUR\":0.86...}}"
+    }
+  ],
+
+  "auth": {
+    "type": "none",
+    "note": "Service is deployed with --allow-unauthenticated (public), so no Authorization header is needed. If a service requires auth instead, get a token with `gcloud auth print-identity-token` and paste it into the tool's Auth tab as a Bearer Token."
+  }
+}

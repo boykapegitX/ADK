@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Agent Chat Tester</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1e1e1e;
+    color: #e8e8e8;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 10px 20px 0 20px;
+    background: #252525;
+    border-bottom: 1px solid #3a3a3a;
+  }
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .status-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #666; display: inline-block;
+  }
+  .status-dot.connected { background: #3ecf5f; }
+  .status-dot.error { background: #e5484d; }
+  .meta { font-size: 12px; color: #9a9a9a; padding-bottom: 8px; }
+
+  /* Mode tabs (Chat / Raw Request) */
+  .mode-tabs { display: flex; gap: 2px; }
+  .mode-tab {
+    padding: 8px 16px;
+    font-size: 13px;
+    color: #9a9a9a;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .mode-tab.active { color: #e8e8e8; border-bottom-color: #2b5fd9; }
+  .mode-tab:hover { color: #e8e8e8; }
+
+  .connect-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-bottom: 8px;
+  }
+  .connect-row input, .req-row input, .req-row select {
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: #e8e8e8;
+    font-size: 13px;
+  }
+  #url-input { flex: 2; min-width: 200px; }
+  #app-input { flex: 1; min-width: 120px; }
+  .connect-row button, .req-row button {
+    background: #333;
+    color: #e8e8e8;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .connect-row button:hover, .req-row button:hover { background: #3d3d3d; }
+  .connect-row button.primary, .req-row button.primary { background: #2b5fd9; border-color: #2b5fd9; }
+  .connect-row button.primary:hover, .req-row button.primary:hover { background: #2450b8; }
+  button.new-session {
+    background: #333;
+    color: #e8e8e8;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.new-session:hover { background: #3d3d3d; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ---- Chat panel ---- */
+  #chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg {
+    max-width: 70%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    line-height: 1.4;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
+  .msg.user { align-self: flex-end; background: #2b5fd9; color: white; border-bottom-right-radius: 2px; }
+  .msg.agent { align-self: flex-start; background: #2d2d2d; border: 1px solid #3a3a3a; border-bottom-left-radius: 2px; }
+  .msg.system { align-self: center; background: transparent; color: #9a9a9a; font-size: 12px; border: 1px dashed #3a3a3a; }
+  .msg.error { align-self: center; background: #4a1f1f; border: 1px solid #7a3a3a; color: #ffb3b3; font-size: 13px; }
+  .sources { margin-top: 8px; padding-top: 8px; border-top: 1px solid #3a3a3a; font-size: 12px; }
+  .sources a { color: #7cb0ff; display: block; margin-top: 2px; text-decoration: none; }
+  .sources a:hover { text-decoration: underline; }
+
+  #input-bar { display: flex; gap: 8px; padding: 16px 20px; background: #252525; border-top: 1px solid #3a3a3a; }
+  #msg-input {
+    flex: 1; background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px;
+    padding: 10px 14px; color: #e8e8e8; font-size: 14px; resize: none;
+  }
+  #msg-input:focus { outline: none; border-color: #2b5fd9; }
+  #send-btn { background: #2b5fd9; color: white; border: none; border-radius: 8px; padding: 0 20px; font-size: 14px; cursor: pointer; }
+  #send-btn:disabled { background: #3a3a3a; cursor: not-allowed; }
+  .typing { align-self: flex-start; color: #9a9a9a; font-size: 13px; font-style: italic; }
+
+  /* ---- Raw request panel ---- */
+  #raw-panel { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+  .req-row { display: flex; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #3a3a3a; }
+  #raw-method { width: 90px; }
+  #raw-url { flex: 1; }
+
+  .req-body-area { flex: 1; display: flex; overflow: hidden; }
+  .req-left { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #3a3a3a; min-width: 0; }
+  .req-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  .subtabs { display: flex; gap: 2px; padding: 0 20px; background: #202020; border-bottom: 1px solid #3a3a3a; }
+  .subtab { padding: 8px 12px; font-size: 12px; color: #9a9a9a; cursor: pointer; border-bottom: 2px solid transparent; }
+  .subtab.active { color: #e8e8e8; border-bottom-color: #2b5fd9; }
+
+  .req-tab-content { flex: 1; overflow-y: auto; padding: 12px 20px; display: none; }
+  .req-tab-content.active { display: block; }
+
+  #raw-body-input {
+    width: 100%; height: 100%; min-height: 200px;
+    background: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 6px;
+    color: #d4d4d4; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px;
+    padding: 10px; resize: none;
+  }
+  .kv-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  .kv-row input {
+    background: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 5px;
+    padding: 6px 8px; color: #e8e8e8; font-size: 12px; flex: 1;
+  }
+  .kv-row button { background: #3a2020; border: 1px solid #5a3030; color: #ffb3b3; border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  .add-row-btn { background: #2d2d2d; border: 1px solid #3a3a3a; color: #9a9a9a; border-radius: 5px; padding: 5px 10px; font-size: 12px; cursor: pointer; margin-top: 4px; }
+  .add-row-btn:hover { background: #353535; }
+
+  .auth-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+
+  .resp-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 20px; border-bottom: 1px solid #3a3a3a; font-size: 12px; min-height: 34px;
+  }
+  .status-badge { font-weight: 600; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .status-badge.s2xx { background: #1e3a24; color: #3ecf5f; }
+  .status-badge.s3xx { background: #3a3520; color: #e0c95f; }
+  .status-badge.s4xx, .status-badge.s5xx { background: #3a2020; color: #ff8080; }
+  .resp-meta { color: #9a9a9a; }
+  pre#raw-response-body {
+    margin: 0; padding: 12px 20px; font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px; white-space: pre-wrap; word-break: break-word; color: #d4d4d4;
+  }
+  #raw-response-headers { padding: 12px 20px; font-size: 12px; }
+  #raw-response-headers div { padding: 3px 0; border-bottom: 1px solid #2a2a2a; }
+  #raw-response-headers b { color: #9a9a9a; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="title-row">
+      <h1><span id="status-dot" class="status-dot"></span> Agent Chat Tester</h1>
+      <button class="new-session" id="new-session-btn" onclick="newSession()" disabled>New Session</button>
+    </div>
+    <div class="mode-tabs">
+      <div class="mode-tab active" id="tab-chat" onclick="switchMode('chat')">Chat (ADK)</div>
+      <div class="mode-tab" id="tab-raw" onclick="switchMode('raw')">Raw Request</div>
+    </div>
+  </header>
+
+  <!-- ===================== CHAT MODE ===================== -->
+  <div id="chat-panel">
+    <div style="padding: 10px 20px 0 20px; background:#252525;">
+      <div class="connect-row">
+        <input id="url-input" list="url-history" placeholder="https://your-service-xxxxx.run.app" value="{{ default_agent_url }}">
+        <datalist id="url-history"></datalist>
+        <input id="app-input" list="app-history" placeholder="app name (e.g. test_app)" value="{{ default_app_name }}">
+        <datalist id="app-history"></datalist>
+        <button onclick="fetchApps()">List Apps</button>
+        <button class="primary" onclick="connect()">Connect</button>
+      </div>
+      <div class="meta" id="status-text">Not connected. Enter a URL and app name, then click Connect.</div>
+    </div>
+    <div id="chat"></div>
+    <div id="input-bar">
+      <textarea id="msg-input" rows="1" placeholder="Connect to an agent first..." disabled></textarea>
+      <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
+    </div>
+  </div>
+
+  <!-- ===================== RAW REQUEST MODE ===================== -->
+  <div id="raw-panel">
+    <div class="req-row" style="border-bottom: none; padding-bottom: 0;">
+      <select id="saved-requests-select" onchange="applySavedRequest(this.value)" style="flex:1;">
+        <option value="">-- Load a saved request (requests.json) --</option>
+      </select>
+    </div>
+    <div class="meta" id="saved-request-info" style="padding: 0 20px 8px 20px; display:none;"></div>
+    <div class="req-row">
+      <select id="raw-method">
+        <option>GET</option>
+        <option selected>POST</option>
+        <option>PUT</option>
+        <option>PATCH</option>
+        <option>DELETE</option>
+      </select>
+      <input id="raw-url" list="raw-url-history" placeholder="https://your-service-xxxxx.run.app/endpoint">
+      <datalist id="raw-url-history"></datalist>
+      <button class="primary" onclick="sendRawRequest()" id="raw-send-btn">Send</button>
+    </div>
+
+    <div class="req-body-area">
+      <div class="req-left">
+        <div class="subtabs">
+          <div class="subtab active" data-subtab="body" onclick="switchSubtab('body')">Body</div>
+          <div class="subtab" data-subtab="headers" onclick="switchSubtab('headers')">Headers</div>
+          <div class="subtab" data-subtab="auth" onclick="switchSubtab('auth')">Auth</div>
+        </div>
+        <div class="req-tab-content active" id="subtab-body">
+          <textarea id="raw-body-input" placeholder='{&#10;  "key": "value"&#10;}'></textarea>
+        </div>
+        <div class="req-tab-content" id="subtab-headers">
+          <div id="headers-list"></div>
+          <button class="add-row-btn" onclick="addHeaderRow()">+ Add Header</button>
+        </div>
+        <div class="req-tab-content" id="subtab-auth">
+          <div class="auth-row">
+            <select id="auth-type" onchange="onAuthTypeChange()">
+              <option value="none">No Auth</option>
+              <option value="bearer">Bearer Token</option>
+              <option value="gcloud">gcloud identity-token (paste manually)</option>
+            </select>
+          </div>
+          <div class="auth-row" id="auth-token-row" style="display:none;">
+            <input id="auth-token" placeholder="token value" style="flex:1; background:#1a1a1a; border:1px solid #3a3a3a; border-radius:5px; padding:7px 10px; color:#e8e8e8; font-size:12px;">
+          </div>
+          <div class="meta" style="padding: 0;">Get a Cloud Run identity token locally with: <code>gcloud auth print-identity-token</code></div>
+        </div>
+      </div>
+
+      <div class="req-right">
+        <div class="resp-header" id="resp-status-row">
+          <span class="meta">No request sent yet.</span>
+        </div>
+        <div class="subtabs">
+          <div class="subtab active" data-resptab="body" onclick="switchResptab('body')">Body</div>
+          <div class="subtab" data-resptab="headers" onclick="switchResptab('headers')">Headers</div>
+        </div>
+        <div class="req-tab-content active" id="resptab-body" style="padding:0; flex:1; overflow-y:auto;">
+          <pre id="raw-response-body"></pre>
+        </div>
+        <div class="req-tab-content" id="resptab-headers" style="flex:1; overflow-y:auto;">
+          <div id="raw-response-headers"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ======================= shared / mode switching ======================= */
+    function switchMode(mode) {
+      document.getElementById("tab-chat").classList.toggle("active", mode === "chat");
+      document.getElementById("tab-raw").classList.toggle("active", mode === "raw");
+      document.getElementById("chat-panel").style.display = mode === "chat" ? "flex" : "none";
+      document.getElementById("raw-panel").style.display = mode === "raw" ? "flex" : "none";
+    }
+
+    function switchSubtab(name) {
+      document.querySelectorAll(".subtab[data-subtab]").forEach(el =>
+        el.classList.toggle("active", el.dataset.subtab === name));
+      document.querySelectorAll(".req-tab-content[id^='subtab-']").forEach(el =>
+        el.classList.toggle("active", el.id === "subtab-" + name));
+    }
+
+    function switchResptab(name) {
+      document.querySelectorAll(".subtab[data-resptab]").forEach(el =>
+        el.classList.toggle("active", el.dataset.resptab === name));
+      document.querySelectorAll(".req-tab-content[id^='resptab-']").forEach(el =>
+        el.classList.toggle("active", el.id === "resptab-" + name));
+    }
+
+    /* ======================= CHAT MODE ======================= */
+    const chatEl = document.getElementById("chat");
+    const inputEl = document.getElementById("msg-input");
+    const sendBtn = document.getElementById("send-btn");
+    const urlInput = document.getElementById("url-input");
+    const appInput = document.getElementById("app-input");
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const newSessionBtn = document.getElementById("new-session-btn");
+
+    const HISTORY_KEY = "agentTesterHistory";
+    const RAW_HISTORY_KEY = "agentTesterRawHistory";
+
+    function loadHistory(key) {
+      try { return JSON.parse(localStorage.getItem(key)) || []; }
+      catch { return []; }
+    }
+
+    function saveToHistory(url, appName) {
+      let hist = loadHistory(HISTORY_KEY).filter(h => !(h.url === url && h.appName === appName));
+      hist.unshift({ url, appName });
+      hist = hist.slice(0, 10);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+      renderHistory();
+    }
+
+    function saveRawUrlToHistory(url) {
+      let hist = loadHistory(RAW_HISTORY_KEY).filter(u => u !== url);
+      hist.unshift(url);
+      hist = hist.slice(0, 15);
+      localStorage.setItem(RAW_HISTORY_KEY, JSON.stringify(hist));
+      renderRawHistory();
+    }
+
+    function renderHistory() {
+      const hist = loadHistory(HISTORY_KEY);
+      const urlList = document.getElementById("url-history");
+      const appList = document.getElementById("app-history");
+      urlList.innerHTML = "";
+      appList.innerHTML = "";
+      const seenUrls = new Set(), seenApps = new Set();
+      hist.forEach(h => {
+        if (!seenUrls.has(h.url)) { seenUrls.add(h.url); const o = document.createElement("option"); o.value = h.url; urlList.appendChild(o); }
+        if (!seenApps.has(h.appName)) { seenApps.add(h.appName); const o = document.createElement("option"); o.value = h.appName; appList.appendChild(o); }
+      });
+    }
+
+    function renderRawHistory() {
+      const hist = loadHistory(RAW_HISTORY_KEY);
+      const list = document.getElementById("raw-url-history");
+      list.innerHTML = "";
+      hist.forEach(u => { const o = document.createElement("option"); o.value = u; list.appendChild(o); });
+    }
+
+    function addMessage(text, cls) {
+      const div = document.createElement("div");
+      div.className = "msg " + cls;
+      div.textContent = text;
+      chatEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return div;
+    }
+
+    function addSources(container, sources) {
+      if (!sources || sources.length === 0) return;
+      const box = document.createElement("div");
+      box.className = "sources";
+      box.innerHTML = "Sources:";
+      sources.forEach(s => {
+        const a = document.createElement("a");
+        a.href = s.uri; a.target = "_blank"; a.textContent = s.title;
+        box.appendChild(a);
+      });
+      container.appendChild(box);
+    }
+
+    function setConnected(isConnected) {
+      inputEl.disabled = !isConnected;
+      sendBtn.disabled = !isConnected;
+      newSessionBtn.disabled = !isConnected;
+      inputEl.placeholder = isConnected ? "Type a message and press Enter..." : "Connect to an agent first...";
+      statusDot.className = "status-dot" + (isConnected ? " connected" : "");
+    }
+
+    async function fetchApps() {
+      const url = urlInput.value.trim();
+      if (!url) { statusText.textContent = "Enter a URL first."; return; }
+      statusText.textContent = "Fetching /list-apps ...";
+      try {
+        const resp = await fetch("/api/list-apps", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { statusText.textContent = "List apps failed: " + data.error; statusDot.className = "status-dot error"; return; }
+        statusText.textContent = "Available apps: " + JSON.stringify(data.apps);
+        if (data.apps && data.apps.length > 0) appInput.value = data.apps[0];
+      } catch (err) {
+        statusText.textContent = "Network error: " + err.message;
+        statusDot.className = "status-dot error";
+      }
+    }
+
+    async function connect() {
+      const url = urlInput.value.trim();
+      const appName = appInput.value.trim();
+      if (!url || !appName) { statusText.textContent = "Both URL and app name are required."; return; }
+      statusText.textContent = "Connecting...";
+      try {
+        const resp = await fetch("/api/connect", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent_url: url, app_name: appName }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { statusText.textContent = "Connect failed: " + data.error; statusDot.className = "status-dot error"; setConnected(false); return; }
+        saveToHistory(url, appName);
+        setConnected(true);
+        statusText.textContent = `Connected to ${url} (app: ${appName})`;
+        chatEl.innerHTML = "";
+        addMessage(`Connected to ${url} as app "${appName}". New session started.`, "system");
+        inputEl.focus();
+      } catch (err) {
+        statusText.textContent = "Network error: " + err.message;
+        statusDot.className = "status-dot error";
+        setConnected(false);
+      }
+    }
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = "";
+      sendBtn.disabled = true;
+      addMessage(text, "user");
+
+      const typing = document.createElement("div");
+      typing.className = "typing";
+      typing.textContent = "Agent is thinking...";
+      chatEl.appendChild(typing);
+      chatEl.scrollTop = chatEl.scrollHeight;
+
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        const data = await resp.json();
+        typing.remove();
+        if (!resp.ok) { addMessage(data.error || "Request failed", "error"); }
+        else { const bubble = addMessage(data.reply, "agent"); addSources(bubble, data.sources); }
+      } catch (err) {
+        typing.remove();
+        addMessage("Network error: " + err.message, "error");
+      } finally {
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
+
+    async function newSession() {
+      const resp = await fetch("/api/new-session", { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) { statusText.textContent = "New session failed: " + data.error; return; }
+      chatEl.innerHTML = "";
+      addMessage("Started a new session (same agent).", "system");
+    }
+
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    /* ======================= RAW REQUEST MODE ======================= */
+    function addHeaderRow(key = "", value = "") {
+      const list = document.getElementById("headers-list");
+      const row = document.createElement("div");
+      row.className = "kv-row";
+      row.innerHTML = `
+        <input class="hdr-key" placeholder="Header name" value="${key}">
+        <input class="hdr-value" placeholder="Header value" value="${value}">
+        <button onclick="this.parentElement.remove()">x</button>`;
+      list.appendChild(row);
+    }
+
+    function onAuthTypeChange() {
+      const type = document.getElementById("auth-type").value;
+      document.getElementById("auth-token-row").style.display = (type === "none") ? "none" : "flex";
+    }
+
+    function collectHeaders() {
+      const headers = {};
+      document.querySelectorAll("#headers-list .kv-row").forEach(row => {
+        const k = row.querySelector(".hdr-key").value.trim();
+        const v = row.querySelector(".hdr-value").value;
+        if (k) headers[k] = v;
+      });
+      const authType = document.getElementById("auth-type").value;
+      if (authType === "bearer" || authType === "gcloud") {
+        const token = document.getElementById("auth-token").value.trim();
+        if (token) headers["Authorization"] = "Bearer " + token;
+      }
+      return headers;
+    }
+
+    function statusClass(code) {
+      if (code >= 200 && code < 300) return "s2xx";
+      if (code >= 300 && code < 400) return "s3xx";
+      return code >= 400 ? (code < 500 ? "s4xx" : "s5xx") : "";
+    }
+
+    async function sendRawRequest() {
+      const method = document.getElementById("raw-method").value;
+      const url = document.getElementById("raw-url").value.trim();
+      const bodyText = document.getElementById("raw-body-input").value;
+      const statusRow = document.getElementById("resp-status-row");
+      const bodyPre = document.getElementById("raw-response-body");
+      const headersDiv = document.getElementById("raw-response-headers");
+
+      if (!url) { statusRow.innerHTML = '<span class="meta">Enter a URL first.</span>'; return; }
+
+      const headers = collectHeaders();
+      // Default JSON content-type if a body is present and none was set.
+      if (bodyText.trim() && !Object.keys(headers).some(h => h.toLowerCase() === "content-type")) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      document.getElementById("raw-send-btn").disabled = true;
+      statusRow.innerHTML = '<span class="meta">Sending...</span>';
+      bodyPre.textContent = "";
+      headersDiv.innerHTML = "";
+
+      try {
+        const resp = await fetch("/api/raw-request", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ method, url, headers, body: bodyText }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          statusRow.innerHTML = `<span class="status-badge s5xx">ERROR</span><span class="resp-meta">${data.error}</span>`;
+          document.getElementById("raw-send-btn").disabled = false;
+          return;
+        }
+
+        saveRawUrlToHistory(url);
+
+        const cls = statusClass(data.status_code);
+        const sizeKb = (data.size_bytes / 1024).toFixed(2);
+        statusRow.innerHTML = `
+          <span class="status-badge ${cls}">${data.status_code} ${data.reason || ""}</span>
+          <span class="resp-meta">${data.elapsed_ms} ms</span>
+          <span class="resp-meta">${sizeKb} KB</span>`;
+
+        bodyPre.textContent = data.body_is_json ? JSON.stringify(data.body, null, 2) : data.body;
+
+        headersDiv.innerHTML = "";
+        Object.entries(data.headers || {}).forEach(([k, v]) => {
+          const row = document.createElement("div");
+          row.innerHTML = `<b>${k}:</b> ${v}`;
+          headersDiv.appendChild(row);
+        });
+      } catch (err) {
+        statusRow.innerHTML = `<span class="status-badge s5xx">ERROR</span><span class="resp-meta">${err.message}</span>`;
+      } finally {
+        document.getElementById("raw-send-btn").disabled = false;
+      }
+    }
+
+    /* ======================= saved requests (requests.json) ======================= */
+    let savedRequestsList = [];
+
+    async function loadSavedRequestsList() {
+      try {
+        const resp = await fetch("/api/saved-requests");
+        const data = await resp.json();
+        savedRequestsList = data.requests || [];
+        const select = document.getElementById("saved-requests-select");
+        select.innerHTML = '<option value="">-- Load a saved request (requests.json) --</option>';
+        savedRequestsList.forEach((r, i) => {
+          const opt = document.createElement("option");
+          opt.value = i;
+          opt.textContent = r.name || `Request ${i + 1}`;
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Failed to load saved requests", err);
+      }
+    }
+
+    function applySavedRequest(idx) {
+      const infoBox = document.getElementById("saved-request-info");
+      if (idx === "" || idx === null || idx === undefined) {
+        infoBox.style.display = "none";
+        return;
+      }
+      const r = savedRequestsList[idx];
+      if (!r) return;
+
+      document.getElementById("raw-method").value = (r.method || "GET").toUpperCase();
+      document.getElementById("raw-url").value = r.url || "";
+
+      let bodyStr = "";
+      if (r.body !== null && r.body !== undefined) {
+        bodyStr = (typeof r.body === "string") ? r.body : JSON.stringify(r.body, null, 2);
+      }
+      document.getElementById("raw-body-input").value = bodyStr;
+
+      const list = document.getElementById("headers-list");
+      list.innerHTML = "";
+      const entries = Object.entries(r.headers || {});
+      if (entries.length === 0) {
+        addHeaderRow("Content-Type", "application/json");
+      } else {
+        entries.forEach(([k, v]) => addHeaderRow(k, v));
+      }
+
+      if (r.purpose || r.expected) {
+        infoBox.style.display = "block";
+        infoBox.textContent = [r.purpose, r.expected ? "Expected: " + r.expected : ""]
+          .filter(Boolean).join(" | ");
+      } else {
+        infoBox.style.display = "none";
+      }
+
+      switchSubtab("body");
+    }
+
+    /* ======================= init ======================= */
+    renderHistory();
+    renderRawHistory();
+    loadSavedRequestsList();
+    addHeaderRow("Content-Type", "application/json");
+    setConnected({{ "true" if connected else "false" }});
+    {% if connected %}
+      statusText.textContent = "Connected to {{ agent_url }} (app: {{ app_name }})";
+    {% endif %}
+  </script>
+</body>
+</html>
